@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+	--app-bg-1: #071028; /* deep navy-blue */
+	--app-bg-2: #0b1424; /* slightly lighter navy */
+	--panel-bg: #0f1724; /* dark panel background (bluish charcoal) */
+	--panel-border: rgba(255,255,255,0.04);
+	--panel-foreground: #e6eef8; /* light text for panels */
+}
+
+body {
+	background: linear-gradient(180deg, var(--app-bg-1), var(--app-bg-2));
+	color: var(--panel-foreground);
+}
+
+/* Make panels slightly lighter than background while keeping existing utility classes */
+.bg-white {
+	background-color: var(--panel-bg) !important;
+}
+
+.bg-blue-50 {
+	background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+/* Override light page background util so the page isn't white */
+.bg-gray-50 {
+	background-color: transparent !important;
+}
+
+/* Slightly lighter content area so panels remain readable on top of page */
+.page-content {
+	background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+}
+
+.border-gray-200 {
+	border-color: rgba(255,255,255,0.06) !important;
+}
+
+.text-gray-700, .text-gray-800, .text-gray-600, .text-gray-500 {
+	color: var(--panel-foreground) !important;
+}
+
+/* Upload box styling + drag active animation */
+.upload-box {
+	transition: box-shadow 120ms ease, transform 120ms ease, border-color 120ms ease;
+	background-clip: padding-box;
+}
+.upload-box.drag-active {
+	box-shadow: 0 10px 30px rgba(8,20,36,0.45);
+	transform: translateY(-2px);
+	border-color: rgba(59,130,246,0.9) !important;
+}
+.upload-box.drag-active::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: 0.5rem;
+	pointer-events: none;
+	box-shadow: 0 0 0 6px rgba(59,130,246,0.06);
+}
+
+/* stronger blink / pulse when dragging */
+.upload-box.drag-active {
+	animation: pulse 800ms ease-in-out 1;
+}
+
+@keyframes pulse {
+	0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.06); }
+	50% { box-shadow: 0 0 0 10px rgba(59,130,246,0.06); }
+	100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.06); }
+}
+
+.rounded-lg {
+	box-shadow: 0 6px 18px rgba(2,6,23,0.45);
+}
