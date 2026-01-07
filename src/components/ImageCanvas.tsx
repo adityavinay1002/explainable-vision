@@ -58,15 +58,46 @@ export function ImageCanvas({ mat, title, showTileGrid = false, tileSize = 8 }: 
         return;
       }
 
-      // Try to display via OpenCV; catch any runtime errors
+      // Try to display via OpenCV; use a safe temporary copy to avoid
+      // rendering deleted/unsupported Mats. Convert single-channel to RGB.
+      let tempMat: any = null;
       try {
-        cv.imshow(canvas, mat);
+        try {
+          tempMat = new cv.Mat();
+          mat.copyTo(tempMat);
+        } catch (copyErr) {
+          console.error('ImageCanvas: failed to copy Mat for display', copyErr, mat);
+          throw copyErr;
+        }
+
+        // If grayscale, convert to RGB for cv.imshow compatibility
+        if (typeof tempMat.channels === 'function' && tempMat.channels() === 1) {
+          const rgb = new cv.Mat();
+          try {
+            cv.cvtColor(tempMat, rgb, cv.COLOR_GRAY2RGB);
+            tempMat.delete();
+            tempMat = rgb;
+          } catch (cvtErr) {
+            console.error('ImageCanvas: failed to convert gray to RGB', cvtErr);
+          }
+        }
+
+        cv.imshow(canvas, tempMat);
       } catch (showErr) {
         console.error('cv.imshow failed', showErr, mat);
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#c00';
         ctx.fillText('Display error', 10, 20);
+      } finally {
+        try {
+          if (tempMat) {
+            if (typeof tempMat.delete === 'function') tempMat.delete();
+            tempMat = null;
+          }
+        } catch (delErr) {
+          // ignore deletion errors
+        }
       }
 
       // Draw overlay grid on separate transparent canvas to avoid altering image pixels

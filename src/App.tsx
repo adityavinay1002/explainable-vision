@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Eye, BookOpen } from 'lucide-react';
+import { Upload, Eye, BookOpen, Camera } from 'lucide-react';
 import { useOpenCV } from './hooks/useOpenCV';
 import { ImageCanvas } from './components/ImageCanvas';
 import { HistogramChart } from './components/HistogramChart';
 import { ControlPanel } from './components/ControlPanel';
 import { ExplainMode } from './components/ExplainMode';
+import { WebcamCapture } from './components/WebcamCapture';
 import {
   loadImageToMat,
   processImage,
@@ -44,6 +45,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
 
   useEffect(() => {
     if (!cvLoaded || !originalMat) return;
@@ -64,48 +66,52 @@ function App() {
     }
   }, [cvLoaded, originalMat, options]);
 
+  const handleImageSource = (source: string) => {
+    const img = new Image();
+    img.onload = () => {
+      if (!cvLoaded) {
+        setAppError('OpenCV.js not loaded yet. Wait a moment and try again.');
+        return;
+      }
+
+      try {
+        if (originalMat) {
+          cleanupMat(originalMat);
+        }
+        if (processedMat) {
+          cleanupMat(processedMat);
+        }
+
+        const mat = loadImageToMat(img);
+        console.log('Loaded Mat:', { cols: mat.cols, rows: mat.rows, channels: mat.channels ? mat.channels() : 'unknown' });
+        setOriginalMat(mat);
+
+        const processed = processImage(mat, options);
+        console.log('Processed Mat:', { cols: processed.cols, rows: processed.rows, channels: processed.channels ? processed.channels() : 'unknown' });
+        setProcessedMat(processed);
+
+        const origHist = computeHistogram(mat);
+        const procHist = computeHistogram(processed);
+        setOriginalHistogram(origHist);
+        setProcessedHistogram(procHist);
+        setAppError(null);
+      } catch (e: any) {
+        setAppError(e?.message || String(e));
+      }
+    };
+    img.src = source;
+    if (imageRef.current) {
+      imageRef.current.src = source;
+    }
+  }
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        if (!cvLoaded) {
-          setAppError('OpenCV.js not loaded yet. Wait a moment and try again.');
-          return;
-        }
-
-        try {
-          if (originalMat) {
-            cleanupMat(originalMat);
-          }
-          if (processedMat) {
-            cleanupMat(processedMat);
-          }
-
-          const mat = loadImageToMat(img);
-          console.log('Loaded Mat:', { cols: mat.cols, rows: mat.rows, channels: mat.channels ? mat.channels() : 'unknown' });
-          setOriginalMat(mat);
-
-          const processed = processImage(mat, options);
-          console.log('Processed Mat:', { cols: processed.cols, rows: processed.rows, channels: processed.channels ? processed.channels() : 'unknown' });
-          setProcessedMat(processed);
-
-          const origHist = computeHistogram(mat);
-          const procHist = computeHistogram(processed);
-          setOriginalHistogram(origHist);
-          setProcessedHistogram(procHist);
-          setAppError(null);
-        } catch (e: any) {
-          setAppError(e?.message || String(e));
-        }
-      };
-      img.src = e.target?.result as string;
-      if (imageRef.current) {
-        imageRef.current.src = e.target?.result as string;
-      }
+      handleImageSource(e.target?.result as string);
     };
     reader.readAsDataURL(file);
   };
@@ -114,44 +120,14 @@ function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        if (!cvLoaded) {
-          setAppError('OpenCV.js not loaded yet. Wait a moment and try again.');
-          return;
-        }
-
-        try {
-          if (originalMat) {
-            cleanupMat(originalMat);
-          }
-          if (processedMat) {
-            cleanupMat(processedMat);
-          }
-
-          const mat = loadImageToMat(img);
-          console.log('Loaded Mat:', { cols: mat.cols, rows: mat.rows, channels: mat.channels ? mat.channels() : 'unknown' });
-          setOriginalMat(mat);
-
-          const processed = processImage(mat, options);
-          console.log('Processed Mat:', { cols: processed.cols, rows: processed.rows, channels: processed.channels ? processed.channels() : 'unknown' });
-          setProcessedMat(processed);
-
-          const origHist = computeHistogram(mat);
-          const procHist = computeHistogram(processed);
-          setOriginalHistogram(origHist);
-          setProcessedHistogram(procHist);
-          setAppError(null);
-        } catch (e: any) {
-          setAppError(e?.message || String(e));
-        }
-      };
-      img.src = e.target?.result as string;
-      if (imageRef.current) {
-        imageRef.current.src = e.target?.result as string;
-      }
+      handleImageSource(e.target?.result as string);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleWebcamCapture = (imageDataUrl: string) => {
+    handleImageSource(imageDataUrl);
+    setIsWebcamActive(false);
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -222,22 +198,20 @@ function App() {
             <div className="flex gap-2">
               <button
                 onClick={() => setMode('explore')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                  mode === 'explore'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-600 text-gray-700 hover:bg-green-700'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${mode === 'explore'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-blue-600 text-gray-700 hover:bg-green-700'
+                  }`}
               >
                 <Eye size={18} />
                 Explore Mode
               </button>
               <button
                 onClick={() => setMode('explain')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                  mode === 'explain'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-600 text-gray-700 hover:bg-green-700'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${mode === 'explain'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-blue-600 text-gray-700 hover:bg-green-700'
+                  }`}
                 disabled={!originalMat}
               >
                 <BookOpen size={18} />
@@ -256,41 +230,67 @@ function App() {
         )}
         {!originalMat ? (
           <div className="text-center py-20">
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragEnter={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`upload-box bg-white border-2 border-dashed border-gray-300 rounded-lg p-12 max-w-md mx-auto ${dragActive ? 'drag-active' : ''}`}
-            >
-              <Upload className="mx-auto mb-4 text-gray-400" size={48} />
-              <h2 className="text-xl font-semibold text-gray-200 mb-2">
-                Upload or Drop an Image
-              </h2>
-              <p className="text-gray-300 mb-6">
-                Drop an image onto the box, or click to choose one from your files.
-              </p>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Choose Image
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </div>
+            {isWebcamActive ? (
+              <WebcamCapture onCapture={handleWebcamCapture} onCancel={() => setIsWebcamActive(false)} />
+            ) : (
+              <div className="max-w-md mx-auto">
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  className={`upload-box bg-white border-2 border-dashed border-gray-300 rounded-lg p-12 mb-6 ${dragActive ? 'drag-active' : ''}`}
+                >
+                  <Upload className="mx-auto mb-4 text-gray-400" size={48} />
+                  <h2 className="text-xl font-semibold text-gray-200 mb-2">
+                    Upload or Drop an Image
+                  </h2>
+                  <p className="text-gray-300 mb-6">
+                    Drop an image onto the box, or click to choose one from your files.
+                  </p>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors w-full"
+                  >
+                    Choose Image
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </div>
+
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="h-px bg-gray-700 flex-1"></div>
+                  <span className="text-gray-400 text-sm">OR</span>
+                  <div className="h-px bg-gray-700 flex-1"></div>
+                </div>
+
+                <button
+                  onClick={() => setIsWebcamActive(true)}
+                  className="px-6 py-3 bg-gray-700 text-white rounded-md hover:bg-gray-800 transition-colors w-full flex items-center justify-center gap-2"
+                >
+                  <Camera size={20} />
+                  Start Webcam
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-6">
             <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between">
               <span className="text-sm text-gray-600">Image loaded successfully</span>
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  setOriginalMat(null);
+                  setProcessedMat(null);
+                  setOriginalHistogram(null);
+                  setProcessedHistogram(null);
+                  setIsWebcamActive(false);
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
               >
                 Load Different Image
