@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Eye, BookOpen, Camera } from 'lucide-react';
+import { Upload, Eye, BookOpen, Camera, Undo, Redo, Download } from 'lucide-react';
 import { useOpenCV } from './hooks/useOpenCV';
 import { ImageCanvas } from './components/ImageCanvas';
 import { HistogramChart } from './components/HistogramChart';
@@ -16,6 +16,29 @@ import { computeHistogram } from './utils/histogram';
 
 type AppMode = 'explore' | 'explain';
 
+const DEFAULT_OPTIONS: ProcessingOptions = {
+  grayscale: false,
+  histogramEqualization: false,
+  clahe: false,
+  claheClipLimit: 2.0,
+  claheTileSize: 8,
+  colorClahe: false,
+  gaussianBlur: false,
+  gaussianKernelSize: 5,
+  averageBlur: false,
+  averageKernelSize: 5,
+  sharpen: false,
+  sobelEdges: false,
+  cannyEdges: false,
+  cannyThreshold1: 50,
+  cannyThreshold2: 150,
+  rotation: 0,
+  flipHorizontal: false,
+  flipVertical: false,
+  cropCenter: false,
+  resize: null,
+};
+
 function App() {
   const { loaded: cvLoaded, error: cvError } = useOpenCV();
   const [appError, setAppError] = useState<string | null>(null);
@@ -24,23 +47,9 @@ function App() {
   const [processedMat, setProcessedMat] = useState<any>(null);
   const [originalHistogram, setOriginalHistogram] = useState<any>(null);
   const [processedHistogram, setProcessedHistogram] = useState<any>(null);
-  const [options, setOptions] = useState<ProcessingOptions>({
-    grayscale: false,
-    histogramEqualization: false,
-    clahe: false,
-    claheClipLimit: 2.0,
-    claheTileSize: 8,
-    colorClahe: false,
-    gaussianBlur: false,
-    gaussianKernelSize: 5,
-    averageBlur: false,
-    averageKernelSize: 5,
-    sharpen: false,
-    sobelEdges: false,
-    cannyEdges: false,
-    cannyThreshold1: 50,
-    cannyThreshold2: 150,
-  });
+  const [options, setOptions] = useState<ProcessingOptions>(DEFAULT_OPTIONS);
+  const [history, setHistory] = useState<ProcessingOptions[]>([]);
+  const [future, setFuture] = useState<ProcessingOptions[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -86,7 +95,11 @@ function App() {
         console.log('Loaded Mat:', { cols: mat.cols, rows: mat.rows, channels: mat.channels ? mat.channels() : 'unknown' });
         setOriginalMat(mat);
 
-        const processed = processImage(mat, options);
+        // Reset options when loading a new image
+        setOptions(DEFAULT_OPTIONS);
+
+        // Process with default options immediately
+        const processed = processImage(mat, DEFAULT_OPTIONS);
         console.log('Processed Mat:', { cols: processed.cols, rows: processed.rows, channels: processed.channels ? processed.channels() : 'unknown' });
         setProcessedMat(processed);
 
@@ -151,23 +164,44 @@ function App() {
   };
 
   const handleReset = () => {
-    setOptions({
-      grayscale: false,
-      histogramEqualization: false,
-      clahe: false,
-      claheClipLimit: 2.0,
-      claheTileSize: 8,
-      colorClahe: false,
-      gaussianBlur: false,
-      gaussianKernelSize: 5,
-      averageBlur: false,
-      averageKernelSize: 5,
-      sharpen: false,
-      sobelEdges: false,
-      cannyEdges: false,
-      cannyThreshold1: 50,
-      cannyThreshold2: 150,
-    });
+    setHistory([...history, options]);
+    setFuture([]);
+    setOptions(DEFAULT_OPTIONS);
+  };
+
+  const handleOptionsChange = (newOptions: ProcessingOptions) => {
+    setHistory([...history, options]);
+    setFuture([]);
+    setOptions(newOptions);
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
+    setFuture([options, ...future]);
+    setHistory(newHistory);
+    setOptions(previous);
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+    setHistory([...history, options]);
+    setFuture(newFuture);
+    setOptions(next);
+  };
+
+  const handleDownload = () => {
+    if (!processedMat) return;
+    const canvas = document.createElement('canvas');
+    window.cv.imshow(canvas, processedMat);
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = 'processed_image.png';
+    link.href = dataUrl;
+    link.click();
   };
 
   if (!cvLoaded) {
@@ -333,13 +367,54 @@ function App() {
                       />
                     )}
                   </div>
+
+                  <div className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleUndo}
+                        disabled={history.length === 0}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${history.length === 0
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-gray-700 text-white hover:bg-gray-600'
+                          }`}
+                      >
+                        <Undo size={16} />
+                        Undo
+                      </button>
+                      <button
+                        onClick={handleRedo}
+                        disabled={future.length === 0}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${future.length === 0
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-gray-700 text-white hover:bg-gray-600'
+                          }`}
+                      >
+                        <Redo size={16} />
+                        Redo
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={handleDownload}
+                      disabled={!processedMat}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${!processedMat
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                    >
+                      <Download size={16} />
+                      Download
+                    </button>
+                  </div>
                 </div>
 
                 <div>
                   <ControlPanel
                     options={options}
-                    onChange={setOptions}
+                    onChange={handleOptionsChange}
                     onReset={handleReset}
+                    width={originalMat?.cols || 800}
+                    height={originalMat?.rows || 600}
                   />
                 </div>
               </div>

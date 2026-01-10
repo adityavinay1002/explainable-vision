@@ -1,3 +1,8 @@
+export interface ResizeOptions {
+  width: number;
+  height: number;
+}
+
 export interface ProcessingOptions {
   grayscale?: boolean;
   histogramEqualization?: boolean;
@@ -14,6 +19,12 @@ export interface ProcessingOptions {
   cannyEdges?: boolean;
   cannyThreshold1?: number;
   cannyThreshold2?: number;
+  // Geometric transformations
+  rotation?: number; // 0, 90, 180, 270
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
+  cropCenter?: boolean;
+  resize?: ResizeOptions | null;
 }
 
 export function loadImageToMat(imageElement: HTMLImageElement): any {
@@ -44,6 +55,83 @@ export function loadImageToMat(imageElement: HTMLImageElement): any {
 
   return matRGB;
 }
+
+export function applyRotation(src: any, angle: number): any {
+  const cv = window.cv;
+  const result = new cv.Mat();
+
+  // Angle is expected to be 90, 180, 270.
+  // OpenCV rotate codes:
+  // ROTATE_90_CLOCKWISE = 0
+  // ROTATE_180 = 1
+  // ROTATE_90_COUNTERCLOCKWISE = 2
+
+  if (angle === 90) {
+    cv.rotate(src, result, cv.ROTATE_90_CLOCKWISE);
+  } else if (angle === 180) {
+    cv.rotate(src, result, cv.ROTATE_180);
+  } else if (angle === 270) {
+    cv.rotate(src, result, cv.ROTATE_90_COUNTERCLOCKWISE);
+  } else {
+    src.copyTo(result);
+  }
+
+  return result;
+}
+
+export function applyFlip(src: any, horizontal: boolean, vertical: boolean): any {
+  const cv = window.cv;
+  const result = new cv.Mat();
+
+  // flipCode: 0 means flipping around the x-axis (vertical)
+  // positive value (for example, 1) means flipping around y-axis (horizontal)
+  // negative value (for example, -1) means flipping around both axes
+
+  let flipCode = -2; // No flip
+
+  if (horizontal && vertical) {
+    flipCode = -1;
+  } else if (horizontal) {
+    flipCode = 1;
+  } else if (vertical) {
+    flipCode = 0;
+  }
+
+  if (flipCode !== -2) {
+    cv.flip(src, result, flipCode);
+  } else {
+    src.copyTo(result);
+  }
+
+  return result;
+}
+
+export function applyCropCenter(src: any): any {
+  const cv = window.cv;
+  // Crop to center 50%
+  const rect = new cv.Rect(
+    Math.floor(src.cols * 0.25),
+    Math.floor(src.rows * 0.25),
+    Math.floor(src.cols * 0.5),
+    Math.floor(src.rows * 0.5)
+  );
+
+  // roi returns a submatrix header, we clone it to be safe and independent
+  const cropped = src.roi(rect);
+  const result = cropped.clone();
+  cropped.delete();
+
+  return result;
+}
+
+export function applyResize(src: any, width: number, height: number): any {
+  const cv = window.cv;
+  const result = new cv.Mat();
+  const dsize = new cv.Size(width, height);
+  cv.resize(src, result, dsize, 0, 0, cv.INTER_LINEAR);
+  return result;
+}
+
 
 export function convertToGrayscale(src: any): any {
   const cv = window.cv;
@@ -152,7 +240,7 @@ export function applyCLAHEToColor(src: any, clipLimit: number = 2.0, tileSize: n
       clahe.apply(yChannel, enhancedY);
       usedClahe = true;
     } finally {
-      try { if (typeof clahe.delete === 'function') clahe.delete(); } catch (e) {}
+      try { if (typeof clahe.delete === 'function') clahe.delete(); } catch (e) { }
     }
   } else if (hasCtor) {
     let clahe: any = null;
@@ -163,7 +251,7 @@ export function applyCLAHEToColor(src: any, clipLimit: number = 2.0, tileSize: n
     } catch (e) {
       // fallback below
     } finally {
-      try { if (clahe && typeof clahe.delete === 'function') clahe.delete(); } catch (e) {}
+      try { if (clahe && typeof clahe.delete === 'function') clahe.delete(); } catch (e) { }
     }
   }
 
@@ -274,6 +362,33 @@ export function processImage(
   const cv = window.cv;
   let result = new cv.Mat();
   src.copyTo(result);
+
+  // Geometric Transformations
+  if (options.rotation) {
+    const temp = applyRotation(result, options.rotation);
+    result.delete();
+    result = temp;
+  }
+
+  if (options.flipHorizontal || options.flipVertical) {
+    const temp = applyFlip(result, options.flipHorizontal || false, options.flipVertical || false);
+    result.delete();
+    result = temp;
+  }
+
+  if (options.cropCenter) {
+    const temp = applyCropCenter(result);
+    // cropCenter generally reduces size, no extra cleanup needed on result since it's a fresh mat
+    result.delete();
+    result = temp;
+  }
+
+  if (options.resize) {
+    const temp = applyResize(result, options.resize.width, options.resize.height);
+    result.delete();
+    result = temp;
+  }
+
   // Priority and mode handling for histogram/CLAHE options:
   // 1) colorClahe (applies to color images in luminance/chrominance space, YCrCb)
   // 2) clahe (grayscale CLAHE)
